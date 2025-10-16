@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visual IG Grid Widget</title>
+  <meta name="description" content="Embeddable Instagram-style grid preview widget for Notion and websites." />
+  <style>
+    :root{
+      --gap: 6px;
+      --radius: 8px;
+      --columns: 3;
+      --maxw: 1200px;
+      --shadow: 0 0 0 rgba(0,0,0,0);
+      --bg: transparent;
+    }
+    *{box-sizing:border-box}
+    html, body{
+      height:100%;
+      margin:0;
+      background: var(--bg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .wrap{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100%;
+      padding:8px;
+    }
+    .grid{
+      width:100%;
+      max-width: var(--maxw);
+      display:grid;
+      grid-template-columns: repeat(var(--columns), 1fr);
+      gap: var(--gap);
+    }
+    .card{
+      position:relative;
+      border-radius: var(--radius);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+      background:#eee;
+      aspect-ratio: 1 / 1;
+    }
+    .card img{
+      width:100%;
+      height:100%;
+      object-fit: cover;
+      display:block;
+    }
+    .label{
+      position:absolute;
+      left:6px;
+      bottom:6px;
+      background: rgba(0,0,0,.6);
+      color:#fff;
+      padding:4px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1;
+      max-width: 95%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge{
+      position:absolute;
+      top:6px;
+      left:6px;
+      background: rgba(255,255,255,.85);
+      color:#222;
+      font-weight:600;
+      padding:3px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1;
+    }
+    /* Optional header (shown in edit mode) */
+    .header{
+      position:fixed;
+      top:8px;
+      right:8px;
+      background: rgba(255,255,255,.9);
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px solid #ddd;
+      box-shadow: 0 10px 20px rgba(0,0,0,.08);
+      font-size:13px;
+      display:none;
+      z-index:2;
+    }
+    .header input, .header select{
+      width:72px;
+      padding:4px;
+      font-size:12px;
+    }
+    .header .wide{ width: 360px }
+    .credit{
+      position:fixed;
+      bottom:8px;
+      right:8px;
+      opacity:.45;
+      font-size:12px;
+      display:none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="grid" id="grid" aria-label="Instagram-style grid"></div>
+  </div>
+
+  <div class="header" id="panel">
+    <strong>IG Grid Widget (edit mode)</strong><br>
+    Columns <input id="cols" type="number" min="1" max="12" value="3">
+    Gap(px) <input id="gap" type="number" min="0" max="40" value="6">
+    Radius(px) <input id="rad" type="number" min="0" max="40" value="8">
+    <label><input id="shadow" type="checkbox"> Shadow</label>
+    <label><input id="reverse" type="checkbox"> Reverse order</label>
+    <br>Images (| separated URLs):<br>
+    <input id="imgs" class="wide" placeholder="https://...|https://...|https://...">
+    <br>Labels (optional, | separated):<br>
+    <input id="labels" class="wide" placeholder="Draft|Scheduled|Posted">
+    <br><button id="apply">Apply</button>
+  </div>
+  <div class="credit" id="credit">IG Grid Widget</div>
+
+<script>
+/**
+ * Visual IG Grid Widget
+ * - Use URL params to configure:
+ *   imgs=URL1|URL2|URL3  (pipe-separated image URLs)
+ *   labels=txt1|txt2|... (optional overlays)
+ *   cols=3               (# of columns)
+ *   gap=6                (px)
+ *   radius=8             (px)
+ *   shadow=1             (drop shadow)
+ *   bg=%23ffffff00       (hex or any CSS color, default transparent)
+ *   reverse=1            (reverse order)
+ *   src=https://...json  (optional JSON array: [{url, label}])
+ *   edit=1               (shows on-page control panel for creators)
+ *
+ * - Works nicely when embedded in Notion via /embed with the full URL.
+ * - For CORS safety, host your images on services that allow hotlinking (Notion files, Imgur, Cloudinary, your CDN).
+ */
+const qs = new URLSearchParams(window.location.search);
+
+// Helper: read an array param split by "|"
+function getArray(name){
+  const val = qs.get(name);
+  if(!val) return [];
+  return val.split('|').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+}
+
+const config = {
+  imgs: getArray('imgs'),
+  labels: getArray('labels'),
+  cols: parseInt(qs.get('cols') || '3', 10),
+  gap: parseInt(qs.get('gap') || '6', 10),
+  radius: parseInt(qs.get('radius') || '8', 10),
+  shadow: qs.get('shadow') === '1',
+  reverse: qs.get('reverse') === '1',
+  bg: qs.get('bg') ? decodeURIComponent(qs.get('bg')) : 'transparent',
+  src: qs.get('src'),
+  edit: qs.get('edit') === '1'
+};
+
+// Apply CSS vars
+function applyTheme(){
+  document.documentElement.style.setProperty('--columns', Math.max(1, Math.min(12, config.cols)));
+  document.documentElement.style.setProperty('--gap', config.gap + 'px');
+  document.documentElement.style.setProperty('--radius', config.radius + 'px');
+  document.documentElement.style.setProperty('--bg', config.bg);
+  document.documentElement.style.setProperty('--shadow', config.shadow ? '0 10px 20px rgba(0,0,0,.08)' : '0 0 0 rgba(0,0,0,0)');
+}
+applyTheme();
+
+async function fetchSrcIfNeeded(){
+  if(!config.src) return;
+  try{
+    const res = await fetch(config.src, {cache: 'no-store'});
+    const data = await res.json();
+    const urls = [];
+    const labels = [];
+    (data || []).forEach(it => {
+      if(it && (it.url || it.src)){
+        urls.push(it.url || it.src);
+        labels.push(it.label || '');
+      }
+    });
+    if(urls.length){
+      config.imgs = urls;
+      config.labels = labels;
+    }
+  }catch(e){
+    console.warn('Failed to load src JSON', e);
+  }
+}
+
+function render(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  let arr = config.imgs.map((u, i)=>({url: u, label: config.labels[i] || ''}));
+  if(config.reverse) arr = arr.reverse();
+  arr.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = item.url;
+    img.alt = 'grid image';
+    card.appendChild(img);
+    if(item.label){
+      const lab = document.createElement('div');
+      lab.className = 'label';
+      lab.textContent = item.label;
+      card.appendChild(lab);
+    }
+    grid.appendChild(card);
+  });
+}
+
+// Edit mode panel for creators
+function initPanel(){
+  const panel = document.getElementById('panel');
+  if(!config.edit){ return; }
+  panel.style.display = 'block';
+  document.getElementById('cols').value = config.cols;
+  document.getElementById('gap').value = config.gap;
+  document.getElementById('rad').value = config.radius;
+  document.getElementById('shadow').checked = config.shadow;
+  document.getElementById('reverse').checked = config.reverse;
+  document.getElementById('imgs').value = config.imgs.join('|');
+  document.getElementById('labels').value = config.labels.join('|');
+  document.getElementById('apply').onclick = () => {
+    config.cols = parseInt(document.getElementById('cols').value,10);
+    config.gap = parseInt(document.getElementById('gap').value,10);
+    config.radius = parseInt(document.getElementById('rad').value,10);
+    config.shadow = document.getElementById('shadow').checked;
+    config.reverse = document.getElementById('reverse').checked;
+    config.imgs = document.getElementById('imgs').value.split('|').filter(Boolean);
+    config.labels = document.getElementById('labels').value.split('|');
+    applyTheme();
+    render();
+    // Update URL for easy copy
+    const params = new URLSearchParams();
+    if(config.imgs.length) params.set('imgs', config.imgs.join('|'));
+    if(config.labels.length) params.set('labels', config.labels.join('|'));
+    params.set('cols', config.cols);
+    params.set('gap', config.gap);
+    params.set('radius', config.radius);
+    if(config.shadow) params.set('shadow', '1');
+    if(config.reverse) params.set('reverse', '1');
+    const newUrl = window.location.origin + window.location.pathname + '?' + params.toString() + '&edit=1';
+    history.replaceState(null, '', newUrl);
+  };
+}
+
+(async function start(){
+  await fetchSrcIfNeeded();
+  initPanel();
+  render();
+})();
+</script>
+</body>
+</html>
