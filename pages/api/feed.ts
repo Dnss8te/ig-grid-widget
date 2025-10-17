@@ -1,62 +1,78 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { Client } from '@notionhq/client';
+// pages/api/feed.ts
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { Client } from '@notionhq/client'
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const notion = new Client({ auth: process.env.NOTION_TOKEN })
 
-function ensureAllowed(database_id: string) {
-  const allowlist = (process.env.ALLOWED_DATABASE_IDS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
-  if (allowlist.length && !allowlist.includes(database_id)) {
-    throw new Error('This database_id is not allowed by the server.');
-  }
-}
+// Property names (must match Notion)
+const TITLE_PROP = 'Post Title'
+const CAPTION_PROP = 'Caption'
+const STATUS_PROP = 'Status'
+const DATE_PROP = 'Post Date'
+const MEDIA_PROP = 'Media (URLs or leave blank)'
+
+const REVALIDATE_SECONDS = 60 // refresh signed Notion file URLs every 60s
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.setHeader('Cache-Control', 'no-store')
+
   try {
-    const { database_id, status, limit = '60' } = req.query as Record<string, string>;
-    if (!database_id) return res.status(400).json({ error: 'database_id is required' });
+    const database_id = String(req.query.database_id || '')
+    const statusFilter = String(req.query.status || '').trim()
+    const limit = Math.min(parseInt(String(req.query.limit || '30'), 10) || 30, 100)
 
-    ensureAllowed(database_id);
+    // optional safety allowlist
+    const allow = (process.env.ALLOWED_DATABASE_IDS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    if (allow.length && !allow.includes(database_id)) {
+      return res.status(403).json({ error: 'This database_id is not allowed.' })
+    }
 
-    const filters: any[] = [];
-    if (status) filters.push({ property: 'Status', select: { equals: status } });
+    const filter: any = statusFilter
+      ? { and: [{ property: STATUS_PROP, select: { equals: statusFilter } }] }
+      : undefined
 
-    const query: any = {
+    const query = await notion.databases.query({
       database_id,
-      sorts: [{ property: 'Post Date', direction: 'descending' }],
-      page_size: Math.min(Number(limit) || 60, 100),
-    };
-    if (filters.length) query.filter = { and: filters };
+      page_size: limit,
+      filter,
+      sorts: [{ property: DATE_PROP, direction: 'descending' }],
+    })
 
-    const resp = await notion.databases.query(query);
+    const items = query.results
+      .map((page: any) => {
+        const p = page.properties
 
-    const items = resp.results.map((page: any) => {
-      const props = page.properties || {};
-      const title =
-        (props['Post Title']?.title?.[0]?.plain_text) ||
-        (props['Name']?.title?.[0]?.plain_text) ||
-        'Untitled';
+        const title =
+          p[TITLE_PROP]?.title?.map((t: any) => t.plain_text).join('') || 'Untitled'
 
-      const caption =
-        (props['Caption']?.rich_text || [])
-          .map((t: any) => t.plain_text)
-          .join('') || '';
+        const caption =
+          p[CAPTION_PROP]?.rich_text?.map((t: any) => t.plain_text).join('') || ''
 
-      const postDate = props['Post Date']?.date?.start || null;
-      const files = props['Media']?.files || [];
-      const media = files
-        .map((f: any) => f.external?.url || f.file?.url)
-        .filter(Boolean);
+        const date = p[DATE_PROP]?.date?.start || null
+        const status = p[STATUS_PROP]?.select?.name || null
 
-      return { id: page.id, title, caption, postDate, media };
-    }).filter((i: any) => i.media.length > 0);
+        // Accept BOTH Notion uploads and external URLs from Files & media
+        const images: string[] = []
+        const filesProp = p[MEDIA_PROP]
+        if (filesProp?.type === 'files' && Array.isArray(filesProp.files)) {
+          for (const f of filesProp.files) {
+            if (f.type === 'external') images.push(f.external.url)
+            if (f.type === 'file') images.push(f.file.url) // signed, time-limited
+          }
+        }
 
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ items });
+        return { id: page.id, title, caption, status, date, images }
+      })
+      .filter((it: any) => it.images && it.images.length > 0)
+
+    return res
+      .status(200)
+      .setHeader('CDN-Cache-Control', `max-age=0, s-maxage=${REVALIDATE_SECONDS}`)
+      .json({ items })
   } catch (e: any) {
-    console.error(e);
-    return res.status(500).json({ error: e.message || 'Server error' });
+    return res.status(500).json({ error: e?.message || 'Unknown error' })
   }
 }
