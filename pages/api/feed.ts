@@ -30,9 +30,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: 'This database_id is not allowed.' })
     }
 
-    const filter: any = statusFilter
-      ? { and: [{ property: STATUS_PROP, select: { equals: statusFilter } }] }
-      : undefined
+    const filter: any =
+  statusFilter
+    ? { and: [{ property: STATUS_PROP, status: { equals: statusFilter } }] }
+    : undefined;
+
 
     const query = await notion.databases.query({
       database_id,
