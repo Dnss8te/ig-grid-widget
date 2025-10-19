@@ -9,7 +9,15 @@ const TITLE_PROP = 'Post Title'
 const CAPTION_PROP = 'Caption'
 const STATUS_PROP = 'Status'
 const DATE_PROP = 'Post Date'
-const MEDIA_PROP = 'Media (URLs or leave blank)'
+const MEDIA_PROP_CANDIDATES = [
+  'Media (URLs or leave blank)',
+  'Media (URL or leave blank)',
+  'Media',
+  'Media URLs',
+  'Media URL',
+  'Files',
+  'Images',
+]
 
 const REVALIDATE_SECONDS = 60 // refresh signed Notion file URLs every 60s
 
@@ -61,14 +69,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 
         // Accept BOTH Notion uploads and external URLs from Files & media
-        const images: string[] = []
-        const filesProp = p[MEDIA_PROP]
-        if (filesProp?.type === 'files' && Array.isArray(filesProp.files)) {
-          for (const f of filesProp.files) {
-            if (f.type === 'external') images.push(f.external.url)
-            if (f.type === 'file') images.push(f.file.url) // signed, time-limited
-          }
-        }
+const images: string[] = []
+
+// find the first media property that exists on this page
+let filesProp: any = null
+for (const name of MEDIA_PROP_CANDIDATES) {
+  if (p[name]) { filesProp = p[name]; break }
+}
+
+if (filesProp?.type === 'files' && Array.isArray(filesProp.files)) {
+  for (const f of filesProp.files) {
+    if (f.type === 'external') images.push(f.external.url)
+    if (f.type === 'file') images.push(f.file.url) // signed, time-limited
+  }
+}
+
 
         return { id: page.id, title, caption, status, date, images }
       })
