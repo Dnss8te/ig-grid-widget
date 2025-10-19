@@ -38,18 +38,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: 'This database_id is not allowed.' })
     }
 
-    const filter: any =
+   // Build filter (Status operator first, fallback to Select)
+const makeFilter = (useStatusOp: boolean) =>
   statusFilter
-    ? { and: [{ property: STATUS_PROP, status: { equals: statusFilter } }] }
+    ? {
+        and: [
+          {
+            property: STATUS_PROP,
+            [useStatusOp ? 'status' : 'select']: { equals: statusFilter },
+          },
+        ],
+      }
     : undefined;
 
+let query;
+try {
+  // Try with Status operator
+  query = await notion.databases.query({
+    database_id,
+    page_size: limit,
+    filter: makeFilter(true),
+    sorts: [{ property: DATE_PROP, direction: 'descending' }],
+  });
+} catch {
+  // Fallback to Select operator
+  query = await notion.databases.query({
+    database_id,
+    page_size: limit,
+    filter: makeFilter(false),
+    sorts: [{ property: DATE_PROP, direction: 'descending' }],
+  });
+}
 
-    const query = await notion.databases.query({
-      database_id,
-      page_size: limit,
-      filter,
-      sorts: [{ property: DATE_PROP, direction: 'descending' }],
-    })
 
     const items = query.results
       .map((page: any) => {
