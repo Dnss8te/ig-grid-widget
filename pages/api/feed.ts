@@ -54,7 +54,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           p[CAPTION_PROP]?.rich_text?.map((t: any) => t.plain_text).join('') || ''
 
         const date = p[DATE_PROP]?.date?.start || null
-        const status = p[STATUS_PROP]?.select?.name || null
+        const status =
+  p[STATUS_PROP]?.status?.name ??
+  p[STATUS_PROP]?.select?.name ??
+  null;
+
 
         // Accept BOTH Notion uploads and external URLs from Files & media
         const images: string[] = []
