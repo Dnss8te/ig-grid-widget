@@ -18,7 +18,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { database_id, status, limit = '60' } = req.query as Record<string, string>;
     if (!database_id) return res.status(400).json({ error: 'database_id is required' });
 
-    ensureAllowed(database_id);
 
     const filters: any[] = [];
     if (status) filters.push({ property: 'Status', select: { equals: status } });
